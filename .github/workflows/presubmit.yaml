@@ -111,7 +111,7 @@ jobs:
       - name: "Run golangci-lint"
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.67.0
+          version: v2.12.2
           args: --timeout=5m --new
 
   verify-format:
