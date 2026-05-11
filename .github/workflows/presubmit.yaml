@@ -104,6 +104,8 @@ jobs:
       checks: "write" # For annotations on PRs
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
           go-version-file: "go.mod"
