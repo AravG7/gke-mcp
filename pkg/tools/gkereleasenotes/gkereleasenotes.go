@@ -1,0 +1,292 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package gkereleasenotes provides tools for fetching GKE release notes.
+package gkereleasenotes
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+var (
+	gkeVersionRegexp         = regexp.MustCompile(`\d+\.\d+\.\d+-gke\.\d+`)
+	releaseDateHeadingRegexp = regexp.MustCompile(`(^|\n)\s*[A-Za-z]+\s+\d+,\s+\d+\s*(\n|$)`)
+)
+
+type getGkeReleaseNotesArgs struct {
+	SourceVersion string `json:"SourceVersion" jsonschema:"A source GKE version an upgrade happens from. For example, '1.33.5-gke.120000'."`
+	TargetVersion string `json:"TargetVersion" jsonschema:"A target GKE version an upgrade happens from. For example, '1.34.3-gke.240500'."`
+}
+
+// Install registers the GKE release notes tool with the MCP server.
+func Install(_ context.Context, s *mcp.Server, c *config.Config) error {
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_gke_release_notes",
+		Description: "Get GKE release notes. Prefer to use this tool if GKE release notes are needed.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args *getGkeReleaseNotesArgs) (*mcp.CallToolResult, any, error) {
+		return getGkeReleaseNotes(ctx, req, args, c)
+	})
+
+	return nil
+}
+
+func getGkeReleaseNotes(_ context.Context, _ *mcp.CallToolRequest, args *getGkeReleaseNotesArgs, c *config.Config) (*mcp.CallToolResult, any, error) {
+	releaseNotesFilePath := fmt.Sprintf("release-notes-%s.html", time.Now().Format("2006-01-02"))
+	releaseNotesFilePath = filepath.Clean(releaseNotesFilePath)
+
+	var out []byte
+	var err error
+
+	if _, err = os.Stat(releaseNotesFilePath); err == nil {
+		c.Logger().Info("Reading release notes from cached file", "path", releaseNotesFilePath)
+		out, err = os.ReadFile(releaseNotesFilePath)
+		if err != nil {
+			c.Logger().Error("Failed to read cached release notes file", "error", err, "path", releaseNotesFilePath)
+			return nil, nil, err
+		}
+	} else {
+		c.Logger().Info("Fetching release notes from web")
+		const releaseNotesPageURL = "https://cloud.google.com/kubernetes-engine/docs/release-notes"
+		resp, err := http.Get(releaseNotesPageURL)
+		if err != nil {
+			c.Logger().Error("Failed to get release notes", "error", err)
+			return nil, nil, err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		out, err = io.ReadAll(resp.Body)
+		if err != nil {
+			c.Logger().Error("Failed to read release notes response body", "error", err)
+			return nil, nil, err
+		}
+		if err = os.WriteFile(releaseNotesFilePath, out, 0600); err != nil {
+			c.Logger().Error("Failed to write release notes to file", "error", err, "path", releaseNotesFilePath)
+		}
+	}
+
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(out))
+	if err != nil {
+		c.Logger().Error("Failed to parse release notes html content", "error", err)
+
+		return nil, nil, err
+	}
+
+	var fullReleaseNotesContent strings.Builder
+	doc.Find("[data-text$=\"Version updates\"]").Parent().Parent().Remove()
+	doc.Find("[data-text$=\"Security updates\"]").Parent().Parent().Remove()
+	doc.Find(".releases").Each(func(_ int, s *goquery.Selection) {
+		fullReleaseNotesContent.WriteString(s.Text())
+	})
+	fullReleaseNotesContentText := fullReleaseNotesContent.String()
+
+	reducedReleaseNotes, err := extractReleaseNotesRelevantForUpgrade(fullReleaseNotesContentText, args.SourceVersion, args.TargetVersion, c)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: reducedReleaseNotes},
+		},
+	}, nil, nil
+}
+
+func extractReleaseNotesRelevantForUpgrade(fullReleaseNotes string, sourceVersion string, targetVersion string, c *config.Config) (string, error) {
+	versionLocations := gkeVersionRegexp.FindAllStringIndex(fullReleaseNotes, -1)
+
+	var leftBorderVersionLocation []int
+	var rightBorderVersionLocation []int
+	if versionLocations != nil {
+		// The release notes are ordered from newest to oldest.
+		// Find the first version that is <= targetVersion. One version to the left (if not first) is our left border.
+		for locIndex, loc := range versionLocations {
+			version := fullReleaseNotes[loc[0]:loc[1]]
+			cmp, err := compareVersions(version, targetVersion, c)
+			if err != nil {
+				continue // Skip invalid versions
+			}
+			// cmp >= 0 means targetVersion >= version
+			if cmp == 0 {
+				leftBorderVersionLocation = loc
+				break
+			} else if cmp > 0 {
+				if locIndex == 0 {
+					leftBorderVersionLocation = loc
+				} else {
+					leftBorderVersionLocation = versionLocations[locIndex-1]
+				}
+				break
+			}
+		}
+
+		// Find the first version that is >= sourceVersion searching from the end. One version to the right (if not last) is our right border.
+		for i := range versionLocations {
+			iFromEnd := len(versionLocations) - i - 1
+			loc := versionLocations[iFromEnd]
+			version := fullReleaseNotes[loc[0]:loc[1]]
+			cmp, err := compareVersions(version, sourceVersion, c)
+			if err != nil {
+				continue // Skip invalid versions
+			}
+			if cmp == 0 {
+				rightBorderVersionLocation = loc
+				break
+			} else if cmp < 0 {
+				if iFromEnd == len(versionLocations)-1 {
+					rightBorderVersionLocation = loc
+				} else {
+					rightBorderVersionLocation = versionLocations[iFromEnd+1]
+				}
+				break
+			}
+		}
+	}
+
+	leftBorder := 0
+	if leftBorderVersionLocation != nil {
+		leftBorder = leftBorderVersionLocation[0]
+	}
+	rightBorder := len(fullReleaseNotes)
+	if rightBorderVersionLocation != nil {
+		rightBorder = rightBorderVersionLocation[1]
+	}
+	reducedReleaseNotes := fullReleaseNotes[leftBorder:rightBorder]
+
+	leftAppend := ""
+	leftCut := fullReleaseNotes[:leftBorder]
+	if len(leftCut) > 0 {
+		dateReleaseHeadingLocations := releaseDateHeadingRegexp.FindAllStringIndex(leftCut, -1)
+		if dateReleaseHeadingLocations == nil {
+			leftAppend = leftCut
+		} else {
+			lastDateReleaseHeadingLocation := dateReleaseHeadingLocations[len(dateReleaseHeadingLocations)-1]
+			leftAppend = leftCut[lastDateReleaseHeadingLocation[0]:]
+		}
+	}
+
+	rightAppend := ""
+	rightCut := fullReleaseNotes[rightBorder:]
+	if len(rightCut) > 0 {
+		dateReleaseHeadingLocations := releaseDateHeadingRegexp.FindAllStringIndex(rightCut, -1)
+		if dateReleaseHeadingLocations == nil {
+			rightAppend = rightCut
+		} else {
+			firstDateReleaseHeadingLocation := dateReleaseHeadingLocations[0]
+			rightCutAppendEnd := firstDateReleaseHeadingLocation[0] - 1
+			if rightCutAppendEnd < 0 {
+				rightCutAppendEnd = 0
+			}
+			rightAppend = rightCut[:rightCutAppendEnd]
+		}
+	}
+
+	reducedReleaseNotes = leftAppend + reducedReleaseNotes + rightAppend
+
+	return reducedReleaseNotes, nil
+
+}
+
+// compareVersion returns:
+// - 1 if b > a
+// - 0 if b == a
+// - -1 if b < a
+func compareVersions(a, b string, c *config.Config) (int, error) {
+	aMajor, aMinor, aPatch, aGKE, err := parseGkeVersion(a)
+	if err != nil {
+		c.Logger().Error("Failed to parse version A", "version", a, "error", err)
+		return 0, err
+	}
+	bMajor, bMinor, bPatch, bGKE, err := parseGkeVersion(b)
+	if err != nil {
+		c.Logger().Error("Failed to parse version B", "version", b, "error", err)
+		return 0, err
+	}
+
+	if bMajor > aMajor {
+		return 1, nil
+	} else if bMajor < aMajor {
+		return -1, nil
+	}
+
+	if bMinor > aMinor {
+		return 1, nil
+	} else if bMinor < aMinor {
+		return -1, nil
+	}
+
+	if bPatch > aPatch {
+		return 1, nil
+	} else if bPatch < aPatch {
+		return -1, nil
+	}
+
+	if bGKE > aGKE {
+		return 1, nil
+	} else if bGKE < aGKE {
+		return -1, nil
+	}
+
+	return 0, nil
+}
+
+// parseGkeVersion returns 4 ints: major, minor, patch and GKE patch versions
+func parseGkeVersion(version string) (int, int, int, int, error) {
+	parts := strings.Split(version, "-gke.")
+	if len(parts) != 2 {
+		return 0, 0, 0, 0, fmt.Errorf("invalid GKE version format: %s", version)
+	}
+
+	k8sVersionPart := parts[0]
+	gkeVersionPart := parts[1]
+
+	k8sParts := strings.Split(k8sVersionPart, ".")
+	if len(k8sParts) != 3 {
+		return 0, 0, 0, 0, fmt.Errorf("invalid Kubernetes version part in GKE version: %s", k8sVersionPart)
+	}
+
+	major, err := strconv.Atoi(k8sParts[0])
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("cannot parse major version: %w", err)
+	}
+	minor, err := strconv.Atoi(k8sParts[1])
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("cannot parse minor version: %w", err)
+	}
+	patch, err := strconv.Atoi(k8sParts[2])
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("cannot parse patch version: %w", err)
+	}
+	gkePatch, err := strconv.Atoi(gkeVersionPart)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("cannot parse GKE patch version: %w", err)
+	}
+	return major, minor, patch, gkePatch, nil
+}

@@ -1,0 +1,9 @@
+mode: set
+github.com/GoogleCloudPlatform/gke-mcp/pkg/apps/apps.go:30.78,36.39 2 1
+github.com/GoogleCloudPlatform/gke-mcp/pkg/apps/apps.go:36.39,37.46 1 1
+github.com/GoogleCloudPlatform/gke-mcp/pkg/apps/apps.go:37.46,39.4 1 0
+github.com/GoogleCloudPlatform/gke-mcp/pkg/apps/apps.go:42.2,42.12 1 1
+github.com/GoogleCloudPlatform/gke-mcp/pkg/prompts/prompts.go:32.74,40.39 2 1
+github.com/GoogleCloudPlatform/gke-mcp/pkg/prompts/prompts.go:40.39,41.46 1 1
+github.com/GoogleCloudPlatform/gke-mcp/pkg/prompts/prompts.go:41.46,43.4 1 0
+github.com/GoogleCloudPlatform/gke-mcp/pkg/prompts/prompts.go:46.2,46.12 1 1
