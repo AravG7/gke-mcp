@@ -30,21 +30,3 @@ Guidelines](https://opensource.google/conduct/).
 All submissions, including submissions by project members, require review. We
 use [GitHub pull requests](https://docs.github.com/articles/about-pull-requests)
 for this purpose.
-
-## Development
-
-### Linux and macOS
-
-The project provides a `Makefile` to simplify common development tasks:
-- `make build`: Builds the UI and the Go binary.
-- `make test`: Runs Go unit tests.
-- `make test-ui`: Runs UI tests.
-- `make run-http`: Runs the server locally in HTTP mode.
-
-### Windows
-
-For Windows developers, a PowerShell equivalent script is provided:
-- `.\dev.ps1 build`: Builds the UI and the Go binary.
-- `.\dev.ps1 test`: Runs Go unit tests.
-- `.\dev.ps1 test-ui`: Runs UI tests.
-- `.\dev.ps1 run-http`: Runs the server locally in HTTP mode.
