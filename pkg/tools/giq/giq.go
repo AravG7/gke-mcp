@@ -18,6 +18,7 @@ package giq
 import (
 	"context"
 	"fmt"
+	"log"
 	"os/exec"
 
 	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
@@ -32,7 +33,7 @@ type giqGenerateManifestArgs struct {
 }
 
 // Install registers GIQ tools with the MCP server.
-func Install(_ context.Context, s *mcp.Server, c *config.Config) error {
+func Install(_ context.Context, s *mcp.Server, _ *config.Config) error {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "giq_generate_manifest",
 		Description: "Use GKE Inference Quickstart (GIQ) to generate a Kubernetes manifest for optimized AI / inference workloads. Prefer to use this tool instead of gcloud",
@@ -40,14 +41,12 @@ func Install(_ context.Context, s *mcp.Server, c *config.Config) error {
 			ReadOnlyHint:   true,
 			IdempotentHint: true,
 		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args *giqGenerateManifestArgs) (*mcp.CallToolResult, any, error) {
-		return giqGenerateManifest(ctx, req, args, c)
-	})
+	}, giqGenerateManifest)
 
 	return nil
 }
 
-func giqGenerateManifest(_ context.Context, _ *mcp.CallToolRequest, args *giqGenerateManifestArgs, c *config.Config) (*mcp.CallToolResult, any, error) {
+func giqGenerateManifest(_ context.Context, _ *mcp.CallToolRequest, args *giqGenerateManifestArgs) (*mcp.CallToolResult, any, error) {
 	if args.Model == "" {
 		return nil, nil, fmt.Errorf("model argument cannot be empty")
 	}
@@ -74,7 +73,7 @@ func giqGenerateManifest(_ context.Context, _ *mcp.CallToolRequest, args *giqGen
 	// #nosec G204
 	out, err := exec.Command("gcloud", gcloudArgs...).Output()
 	if err != nil {
-		c.Logger().Error("Failed to generate manifest", "error", err, "model", args.Model)
+		log.Printf("Failed to generate manifest: %v", err)
 
 		return nil, nil, err
 	}

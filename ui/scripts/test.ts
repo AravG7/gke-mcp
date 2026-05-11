@@ -13,15 +13,13 @@ for (const app of apps) {
     execFileSync('npx', ['vitest', 'run', `apps/${app}`, '--passWithNoTests'], {
       stdio: 'inherit',
       cwd: uiDir,
-      shell: true,
       env: {
         ...process.env,
         VITE_APP_NAME: app,
       },
     });
-  } catch (error) {
+  } catch {
     console.error(`\n❌ Tests failed for app: ${app}\n`);
-    console.error(error);
     failed = true;
   }
 }

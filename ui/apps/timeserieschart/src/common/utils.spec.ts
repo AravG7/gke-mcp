@@ -7,7 +7,7 @@ describe('formatDate', () => {
   it('formats dates consistently in en-US', () => {
     const date = new Date('2026-04-01T12:00:00Z');
     const result = formatDate(date);
-    expect(result).toBe('Apr 1, 12:00:00 PM');
+    expect(result).toBe('Apr 1 12:00:00 PM');
   });
 });
 

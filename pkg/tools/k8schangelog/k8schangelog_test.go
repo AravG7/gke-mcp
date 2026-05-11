@@ -22,7 +22,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -51,9 +50,6 @@ func TestGetK8sChangelog(t *testing.T) {
 	originalChangelogHostURL := changelogHostURL
 	changelogHostURL = server.URL
 	defer func() { changelogHostURL = originalChangelogHostURL }()
-
-	cfg := config.New("test")
-	h := &handlers{c: cfg}
 
 	testCases := []struct {
 		name          string
@@ -86,7 +82,7 @@ func TestGetK8sChangelog(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, _, err := h.getK8sChangelog(context.Background(), nil, tc.args)
+			result, _, err := getK8sChangelog(context.Background(), nil, tc.args)
 
 			if tc.wantErr != "" {
 				if err == nil {
@@ -110,13 +106,7 @@ func TestGetK8sChangelog(t *testing.T) {
 				t.Errorf("content object marshaling failed: %v", err)
 			}
 			contentObjectJSONString := string(contentObjectJSON)
-
-			// Simple normalization for comparison
-			normalize := func(s string) string {
-				return strings.Join(strings.Fields(s), " ")
-			}
-
-			if normalize(contentObjectJSONString) != normalize(expectedProcessedContentObjectJSONString) {
+			if contentObjectJSONString != expectedProcessedContentObjectJSONString {
 				t.Errorf("getK8sChangelog() returned '%s'\n\n\nwant:\n'%s'", contentObjectJSONString, expectedProcessedContentObjectJSONString)
 			}
 		})
@@ -217,74 +207,6 @@ It should be ignored.
 }
 
 // Real changelog content taken from https://raw.githubusercontent.com/kubernetes/kubernetes/refs/heads/master/CHANGELOG/CHANGELOG-1.33.md and cut down
-const expectedProcessedContent = `# v1.33.6
-
-
-## Changelog since v1.33.5
-
-## Changes by Kind
-
-### Feature
-
-- Kubernetes is now built using Go 1.24.9
-  - update setcap and debian-base to bookworm-v1.0.6 ([#134613](https://github.com/kubernetes/kubernetes/pull/134613), [@cpanato](https://github.com/cpanato)) [SIG Architecture, Cloud Provider, Etcd, Release, Storage and Testing]
-
-### Bug or Regression
-
-- Bump system-validators to v1.9.2: remove version-specific cgroup kernel config checks to avoid false failures on cgroup v2 systems when v1-only configs are missing. ([#134086](https://github.com/kubernetes/kubernetes/pull/134086), [@pacoxu](https://github.com/pacoxu)) [SIG Cluster Lifecycle]
-- Extends the nodeports scheduling plugin to consider hostPorts used by restartable init containers. ([#133390](https://github.com/kubernetes/kubernetes/pull/133390), [@SergeyKanzhelev](https://github.com/SergeyKanzhelev)) [SIG Scheduling and Testing]
-- Fix Windows kube-proxy (winkernel) issue where stale RemoteEndpoints remained
-  when a Deployment was referenced by multiple Services due to premature clearing
-  of the terminatedEndpoints map. ([#135171](https://github.com/kubernetes/kubernetes/pull/135171), [@princepereira](https://github.com/princepereira)) [SIG Network and Windows]
-- Fix Windows kube-proxy to prevent intermittent deletion of ClusterIP load balancers in HNS when internalTrafficPolicy=Local, ensuring stable service connectivity. ([#134032](https://github.com/kubernetes/kubernetes/pull/134032), [@princepereira](https://github.com/princepereira)) [SIG Network and Windows]
-- Fix the bug which could result in Job status updates failing with the error:
-  status.startTime: Required value: startTime cannot be removed for unsuspended job
-  The error could be raised after a Job is resumed, if started and suspended previously. ([#135129](https://github.com/kubernetes/kubernetes/pull/135129), [@dejanzele](https://github.com/dejanzele)) [SIG Apps and Testing]
-- Fix: The requests for a config FromClass in the status of a ResourceClaim were not referenced. ([#135105](https://github.com/kubernetes/kubernetes/pull/135105), [@LionelJouin](https://github.com/LionelJouin)) [SIG Node]
-- Fixed a bug in kube-proxy nftables mode (GA as of 1.33) that fails to determine if traffic originates from a local source on the node. The issue was caused by using the wrong meta iif instead of iifname for name based matches. ([#134099](https://github.com/kubernetes/kubernetes/pull/134099), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
-- Fixed a bug in kube-proxy nftables mode (GA as of 1.33) that fails to determine if traffic originates from a local source on the node. The issue was caused by using the wrong meta iif instead of iifname for name based matches. ([#134117](https://github.com/kubernetes/kubernetes/pull/134117), [@jack4it](https://github.com/jack4it)) [SIG Network]
-- Fixed a startup probe race condition that caused main containers to remain stuck in "Initializing" state when sidecar containers with startup probes failed initially but succeeded on restart in pods with restartPolicy=Never. ([#134801](https://github.com/kubernetes/kubernetes/pull/134801), [@yuanwang04](https://github.com/yuanwang04)) [SIG Node and Testing]
-- Fixed race-condition in service allocation logic which leads to spurious IPAddressWrongReference warnings impacting performance ([#133954](https://github.com/kubernetes/kubernetes/pull/133954), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
-- Fixes spammy incorrect "Ignoring same-zone topology hints for service since no hints were provided for zone" messages in the kube-proxy logs. ([#133527](https://github.com/kubernetes/kubernetes/pull/133527), [@danwinship](https://github.com/danwinship)) [SIG Network]
-- Kube-controller-manager: Fixes a 1.33 regression in daemonset handling of orphaned pods ([#134652](https://github.com/kubernetes/kubernetes/pull/134652), [@liggitt](https://github.com/liggitt)) [SIG Apps]
-- Kube-controller-manager: Resolves potential issues handling pods with incorrect uids in their ownerReference ([#134662](https://github.com/kubernetes/kubernetes/pull/134662), [@liggitt](https://github.com/liggitt)) [SIG Apps]
-- Kube-proxy in nftables mode now allows pods on nodes without local service endpoints to access LoadBalancer Service ExternalIPs (with externalTrafficPolicy: Local). Previously, such traffic was dropped. This change brings nftables mode in line with iptables and IPVS modes, allowing traffic to be forwarded to available endpoints elsewhere in the cluster. ([#133969](https://github.com/kubernetes/kubernetes/pull/133969), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
-- Kubeadm: avoid panicing if the user has malformed the kubeconfig in the cluster-info config map to not include a valid current context. Include proper validation at the appropriate locations and throw errors instead. ([#134724](https://github.com/kubernetes/kubernetes/pull/134724), [@neolit123](https://github.com/neolit123)) [SIG Cluster Lifecycle]
-- Kubeadm: ensured waiting for apiserver uses a local client that doesn't reach to the control plane endpoint and instead reaches directly to the local API server endpoint. ([#134269](https://github.com/kubernetes/kubernetes/pull/134269), [@neolit123](https://github.com/neolit123)) [SIG Cluster Lifecycle]
-- Kubeadm: fixed a bug where the node registration information for a given node was not fetched correctly during "kubeadm upgrade node" and the node name can end up being incorrect in cases where the node name is not the same as the host name. ([#134363](https://github.com/kubernetes/kubernetes/pull/134363), [@neolit123](https://github.com/neolit123)) [SIG Cluster Lifecycle]
-- Kubeadm: fixes a preflight check that can fail hostname construction in IPV6 setups ([#134590](https://github.com/kubernetes/kubernetes/pull/134590), [@liggitt](https://github.com/liggitt)) [SIG API Machinery, Auth, Cloud Provider, Cluster Lifecycle and Testing]
-- Reduce event spam during volume operation errors in Portworx in-tree driver ([#135192](https://github.com/kubernetes/kubernetes/pull/135192), [@gohilankit](https://github.com/gohilankit)) [SIG Storage]
-
-### Other (Cleanup or Flake)
-
-- Kubeadm: updated the supported etcd version to v3.5.24 for the skewed control plane version v1.33. ([#135018](https://github.com/kubernetes/kubernetes/pull/135018), [@hakman](https://github.com/hakman)) [SIG Cloud Provider, Cluster Lifecycle and Etcd]
-- Kubernetes is now built using Go 1.24.7 ([#134197](https://github.com/kubernetes/kubernetes/pull/134197), [@cpanato](https://github.com/cpanato)) [SIG Release and Testing]
-- The test is intended to verify pod scheduling with an anti-affinity scenario, but it uses the wrong pod template. 
-  This affects functional correctness. ([#134262](https://github.com/kubernetes/kubernetes/pull/134262), [@sats-23](https://github.com/sats-23)) [SIG Testing]
-
-# v1.33.5
-
-
-## Changelog since v1.33.4
-
-## Changes by Kind
-
-### Feature
-
-- Kubernetes is now built using Go 1.24.6 ([#133522](https://github.com/kubernetes/kubernetes/pull/133522), [@cpanato](https://github.com/cpanato)) [SIG Release and Testing]
-
-### Bug or Regression
-
-- Adjusted the conformance test for the ServiceCIDR API to not test Patch/Update,
-  since they are listed as ineligible_endpoints for conformance. ([#133642](https://github.com/kubernetes/kubernetes/pull/133642), [@danwinship](https://github.com/danwinship)) [SIG Network and Testing]
-- Fixed SELinux warning controller not emitting events on some SELinux label conflicts. ([#133746](https://github.com/kubernetes/kubernetes/pull/133746), [@jsafrane](https://github.com/jsafrane)) [SIG Apps, Storage and Testing]
-- Kubeadm: fixed bug where v1beta3's ClusterConfiguration.APIServer.TimeoutForControlPlane is not respected in newer versions of kubeadm where v1beta4 is the default. ([#133754](https://github.com/kubernetes/kubernetes/pull/133754), [@HirazawaUi](https://github.com/HirazawaUi)) [SIG Cluster Lifecycle]
-
-### Other (Cleanup or Flake)
-
-- Masked off access to Linux thermal interrupt info in /proc and /sys. ([#132985](https://github.com/kubernetes/kubernetes/pull/132985), [@saschagrunert](https://github.com/saschagrunert)) [SIG Node]
-`
-
 const fakeChangelogContent = `<!-- BEGIN MUNGE: GENERATED_TOC -->
 
 - [v1.33.6](#v1336)
@@ -393,14 +315,154 @@ name | architectures
   status.startTime: Required value: startTime cannot be removed for unsuspended job
   The error could be raised after a Job is resumed, if started and suspended previously. ([#135129](https://github.com/kubernetes/kubernetes/pull/135129), [@dejanzele](https://github.com/dejanzele)) [SIG Apps and Testing]
 - Fix: The requests for a config FromClass in the status of a ResourceClaim were not referenced. ([#135105](https://github.com/kubernetes/kubernetes/pull/135105), [@LionelJouin](https://github.com/LionelJouin)) [SIG Node]
-- Fixed a bug in kube-proxy nftables mode (GA as of 1.33) that fails to determine if traffic originates from a local source on the node. The issue was caused by using the wrong meta iif instead of iifname for name based matches. ([#134099](https://github.com/kubernetes/kubernetes/pull/134099), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
-- Fixed a bug in kube-proxy nftables mode (GA as of 1.33) that fails to determine if traffic originates from a local source on the node. The issue was caused by using the wrong meta iif instead of iifname for name based matches. ([#134117](https://github.com/kubernetes/kubernetes/pull/134117), [@jack4it](https://github.com/jack4it)) [SIG Network]
+- Fixed a bug in kube-proxy nftables mode (GA as of 1.33) that fails to determine if traffic originates from a local source on the node. The issue was caused by using the wrong meta ` + "`" + `iif` + "`" + ` instead of ` + "`" + `iifname` + "`" + ` for name based matches. ([#134099](https://github.com/kubernetes/kubernetes/pull/134099), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
+- Fixed a bug in kube-proxy nftables mode (GA as of 1.33) that fails to determine if traffic originates from a local source on the node. The issue was caused by using the wrong meta ` + "`" + `iif` + "`" + ` instead of ` + "`" + `iifname` + "`" + ` for name based matches. ([#134117](https://github.com/kubernetes/kubernetes/pull/134117), [@jack4it](https://github.com/jack4it)) [SIG Network]
 - Fixed a startup probe race condition that caused main containers to remain stuck in "Initializing" state when sidecar containers with startup probes failed initially but succeeded on restart in pods with restartPolicy=Never. ([#134801](https://github.com/kubernetes/kubernetes/pull/134801), [@yuanwang04](https://github.com/yuanwang04)) [SIG Node and Testing]
 - Fixed race-condition in service allocation logic which leads to spurious IPAddressWrongReference warnings impacting performance ([#133954](https://github.com/kubernetes/kubernetes/pull/133954), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
 - Fixes spammy incorrect "Ignoring same-zone topology hints for service since no hints were provided for zone" messages in the kube-proxy logs. ([#133527](https://github.com/kubernetes/kubernetes/pull/133527), [@danwinship](https://github.com/danwinship)) [SIG Network]
 - Kube-controller-manager: Fixes a 1.33 regression in daemonset handling of orphaned pods ([#134652](https://github.com/kubernetes/kubernetes/pull/134652), [@liggitt](https://github.com/liggitt)) [SIG Apps]
 - Kube-controller-manager: Resolves potential issues handling pods with incorrect uids in their ownerReference ([#134662](https://github.com/kubernetes/kubernetes/pull/134662), [@liggitt](https://github.com/liggitt)) [SIG Apps]
-- Kube-proxy in nftables mode now allows pods on nodes without local service endpoints to access LoadBalancer Service ExternalIPs (with externalTrafficPolicy: Local). Previously, such traffic was dropped. This change brings nftables mode in line with iptables and IPVS modes, allowing traffic to be forwarded to available endpoints elsewhere in the cluster. ([#133969](https://github.com/kubernetes/kubernetes/pull/133969), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
+- Kube-proxy in nftables mode now allows pods on nodes without local service endpoints to access LoadBalancer Service ExternalIPs (with ` + "`" + `externalTrafficPolicy: Local` + "`" + `). Previously, such traffic was dropped. This change brings nftables mode in line with iptables and IPVS modes, allowing traffic to be forwarded to available endpoints elsewhere in the cluster. ([#133969](https://github.com/kubernetes/kubernetes/pull/133969), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
+- Kubeadm: avoid panicing if the user has malformed the kubeconfig in the cluster-info config map to not include a valid current context. Include proper validation at the appropriate locations and throw errors instead. ([#134724](https://github.com/kubernetes/kubernetes/pull/134724), [@neolit123](https://github.com/neolit123)) [SIG Cluster Lifecycle]
+- Kubeadm: ensured waiting for apiserver uses a local client that doesn't reach to the control plane endpoint and instead reaches directly to the local API server endpoint. ([#134269](https://github.com/kubernetes/kubernetes/pull/134269), [@neolit123](https://github.com/neolit123)) [SIG Cluster Lifecycle]
+- Kubeadm: fixed a bug where the node registration information for a given node was not fetched correctly during "kubeadm upgrade node" and the node name can end up being incorrect in cases where the node name is not the same as the host name. ([#134363](https://github.com/kubernetes/kubernetes/pull/134363), [@neolit123](https://github.com/neolit123)) [SIG Cluster Lifecycle]
+- Kubeadm: fixes a preflight check that can fail hostname construction in IPV6 setups ([#134590](https://github.com/kubernetes/kubernetes/pull/134590), [@liggitt](https://github.com/liggitt)) [SIG API Machinery, Auth, Cloud Provider, Cluster Lifecycle and Testing]
+- Reduce event spam during volume operation errors in Portworx in-tree driver ([#135192](https://github.com/kubernetes/kubernetes/pull/135192), [@gohilankit](https://github.com/gohilankit)) [SIG Storage]
+
+### Other (Cleanup or Flake)
+
+- Kubeadm: updated the supported etcd version to v3.5.24 for the skewed control plane version v1.33. ([#135018](https://github.com/kubernetes/kubernetes/pull/135018), [@hakman](https://github.com/hakman)) [SIG Cloud Provider, Cluster Lifecycle and Etcd]
+- Kubernetes is now built using Go 1.24.7 ([#134197](https://github.com/kubernetes/kubernetes/pull/134197), [@cpanato](https://github.com/cpanato)) [SIG Release and Testing]
+- The test is intended to verify pod scheduling with an anti-affinity scenario, but it uses the wrong pod template. 
+  This affects functional correctness. ([#134262](https://github.com/kubernetes/kubernetes/pull/134262), [@sats-23](https://github.com/sats-23)) [SIG Testing]
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+- k8s.io/system-validators: v1.9.1 → v1.9.2
+
+### Removed
+_Nothing has changed._
+
+
+
+
+# v1.33.5
+
+
+## Downloads for v1.33.5
+
+
+
+### Source Code
+
+filename | sha512 hash
+-------- | -----------
+[kubernetes.tar.gz](https://dl.k8s.io/v1.33.5/kubernetes.tar.gz) | 7cf4e067ea5882db3d0f5e2f15a27a670ddb4d0a9ac58e26ac554e1d60b57e2c09525e64776ddad5e167d942a7020f61bba8c1c54f7a8b75b9509c5aca6898c0
+[kubernetes-src.tar.gz](https://dl.k8s.io/v1.33.5/kubernetes-src.tar.gz) | ae9e888eec40a41ff0ef22a98e0a024396af375dd1ad55ca163ecde14bfa1fd3c17ba31d7c60e6d4af57aface36cbf922175ce9f7588a89497da4d252eca6623
+
+### Client Binaries
+
+filename | sha512 hash
+-------- | -----------
+[kubernetes-client-darwin-amd64.tar.gz](https://dl.k8s.io/v1.33.5/kubernetes-client-darwin-amd64.tar.gz) | d781af21ab4dc79df263162b0692cebf088c7cc75683a528d9238bc1a7d5258b51e7a7ec597d85567c09e806ff3876d0d124751545a75fa032defc8cfacd2686
+[kubernetes-client-darwin-arm64.tar.gz](https://dl.k8s.io/v1.33.5/kubernetes-client-darwin-arm64.tar.gz) | 102719580db30fe34f2f15251bfaa99ba035eeb54532fd201d11d29c1dabcb793d4d2b980302cf989c201178c071da7abcb8e6ee83fbf338d7d3a4b6e633441a
+
+### Server Binaries
+
+filename | sha512 hash
+-------- | -----------
+[kubernetes-server-linux-amd64.tar.gz](https://dl.k8s.io/v1.33.5/kubernetes-server-linux-amd64.tar.gz) | b48edac93e28565aa44c431099004de38a3ea896e1ebc4ecfe9ebe3eb712c5fd28ad721ef287ff970b0ad1b83f5dfbaeaca8258ede36e795b08803381a322e19
+[kubernetes-server-linux-arm64.tar.gz](https://dl.k8s.io/v1.33.5/kubernetes-server-linux-arm64.tar.gz) | d8e5992b240b1f174bcd84e1de5a901605d93e7e343551730477edd1c4066afcf834be174106135794a63bcf869b99aa500e17cae4238f0be68cb054eb6c6729
+
+### Node Binaries
+
+filename | sha512 hash
+-------- | -----------
+[kubernetes-node-linux-amd64.tar.gz](https://dl.k8s.io/v1.33.5/kubernetes-node-linux-amd64.tar.gz) | f5e25af84feeec774522e727a05372442b3bd61ccf27da7d7c5fb08aadab5d1203ad3403cd01d4d13f550819ab7527e8b90af9903a221724e6d21baf9e590228
+[kubernetes-node-linux-arm64.tar.gz](https://dl.k8s.io/v1.33.5/kubernetes-node-linux-arm64.tar.gz) | dbf946b03b5a9d39edd58f29d51a2f457fd5b85ab4e9db567ca12e69cad832d049ce4d79a404df381ea3795af1a7fdd72a887e9a2a1ec3f9ab67ab50837ad21e
+
+### Container Images
+
+All container images are available as manifest lists and support the described
+architectures. It is also possible to pull a specific architecture directly by
+adding the "-$ARCH" suffix  to the container image name.
+
+name | architectures
+---- | -------------
+[registry.k8s.io/conformance:v1.33.5](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/conformance) | [amd64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/conformance-amd64), [arm64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/conformance-arm64), [ppc64le](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/conformance-ppc64le), [s390x](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/conformance-s390x)
+[registry.k8s.io/kube-apiserver:v1.33.5](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-apiserver) | [amd64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-apiserver-amd64), [arm64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-apiserver-arm64), [ppc64le](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-apiserver-ppc64le), [s390x](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-apiserver-s390x)
+[registry.k8s.io/kube-controller-manager:v1.33.5](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-controller-manager) | [amd64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-controller-manager-amd64), [arm64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-controller-manager-arm64), [ppc64le](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-controller-manager-ppc64le), [s390x](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-controller-manager-s390x)
+[registry.k8s.io/kube-proxy:v1.33.5](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-proxy) | [amd64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-proxy-amd64), [arm64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-proxy-arm64), [ppc64le](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-proxy-ppc64le), [s390x](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-proxy-s390x)
+[registry.k8s.io/kube-scheduler:v1.33.5](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-scheduler) | [amd64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-scheduler-amd64), [arm64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-scheduler-arm64), [ppc64le](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-scheduler-ppc64le), [s390x](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-scheduler-s390x)
+[registry.k8s.io/kubectl:v1.33.5](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kubectl) | [amd64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kubectl-amd64), [arm64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kubectl-arm64), [ppc64le](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kubectl-ppc64le), [s390x](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kubectl-s390x)
+
+## Changelog since v1.33.4
+
+## Changes by Kind
+
+### Feature
+
+- Kubernetes is now built using Go 1.24.6 ([#133522](https://github.com/kubernetes/kubernetes/pull/133522), [@cpanato](https://github.com/cpanato)) [SIG Release and Testing]
+
+### Bug or Regression
+
+- Adjusted the conformance test for the ServiceCIDR API to not test Patch/Update,
+  since they are listed as ineligible_endpoints for conformance. ([#133642](https://github.com/kubernetes/kubernetes/pull/133642), [@danwinship](https://github.com/danwinship)) [SIG Network and Testing]
+- Fixed SELinux warning controller not emitting events on some SELinux label conflicts. ([#133746](https://github.com/kubernetes/kubernetes/pull/133746), [@jsafrane](https://github.com/jsafrane)) [SIG Apps, Storage and Testing]
+- Kubeadm: fixed bug where v1beta3's ClusterConfiguration.APIServer.TimeoutForControlPlane is not respected in newer versions of kubeadm where v1beta4 is the default. ([#133754](https://github.com/kubernetes/kubernetes/pull/133754), [@HirazawaUi](https://github.com/HirazawaUi)) [SIG Cluster Lifecycle]
+
+### Other (Cleanup or Flake)
+
+- Masked off access to Linux thermal interrupt info in ` + "`" + `/proc` + "`" + ` and ` + "`" + `/sys` + "`" + `. ([#132985](https://github.com/kubernetes/kubernetes/pull/132985), [@saschagrunert](https://github.com/saschagrunert)) [SIG Node]
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+_Nothing has changed._
+
+### Removed
+_Nothing has changed._
+`
+
+const expectedProcessedContent = `# v1.33.6
+
+
+## Changelog since v1.33.5
+
+## Changes by Kind
+
+### Feature
+
+- Kubernetes is now built using Go 1.24.9
+  - update setcap and debian-base to bookworm-v1.0.6 ([#134613](https://github.com/kubernetes/kubernetes/pull/134613), [@cpanato](https://github.com/cpanato)) [SIG Architecture, Cloud Provider, Etcd, Release, Storage and Testing]
+
+### Bug or Regression
+
+- Bump system-validators to v1.9.2: remove version-specific cgroup kernel config checks to avoid false failures on cgroup v2 systems when v1-only configs are missing. ([#134086](https://github.com/kubernetes/kubernetes/pull/134086), [@pacoxu](https://github.com/pacoxu)) [SIG Cluster Lifecycle]
+- Extends the nodeports scheduling plugin to consider hostPorts used by restartable init containers. ([#133390](https://github.com/kubernetes/kubernetes/pull/133390), [@SergeyKanzhelev](https://github.com/SergeyKanzhelev)) [SIG Scheduling and Testing]
+- Fix Windows kube-proxy (winkernel) issue where stale RemoteEndpoints remained
+  when a Deployment was referenced by multiple Services due to premature clearing
+  of the terminatedEndpoints map. ([#135171](https://github.com/kubernetes/kubernetes/pull/135171), [@princepereira](https://github.com/princepereira)) [SIG Network and Windows]
+- Fix Windows kube-proxy to prevent intermittent deletion of ClusterIP load balancers in HNS when internalTrafficPolicy=Local, ensuring stable service connectivity. ([#134032](https://github.com/kubernetes/kubernetes/pull/134032), [@princepereira](https://github.com/princepereira)) [SIG Network and Windows]
+- Fix the bug which could result in Job status updates failing with the error:
+  status.startTime: Required value: startTime cannot be removed for unsuspended job
+  The error could be raised after a Job is resumed, if started and suspended previously. ([#135129](https://github.com/kubernetes/kubernetes/pull/135129), [@dejanzele](https://github.com/dejanzele)) [SIG Apps and Testing]
+- Fix: The requests for a config FromClass in the status of a ResourceClaim were not referenced. ([#135105](https://github.com/kubernetes/kubernetes/pull/135105), [@LionelJouin](https://github.com/LionelJouin)) [SIG Node]
+- Fixed a bug in kube-proxy nftables mode (GA as of 1.33) that fails to determine if traffic originates from a local source on the node. The issue was caused by using the wrong meta ` + "`" + `iif` + "`" + ` instead of ` + "`" + `iifname` + "`" + ` for name based matches. ([#134099](https://github.com/kubernetes/kubernetes/pull/134099), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
+- Fixed a bug in kube-proxy nftables mode (GA as of 1.33) that fails to determine if traffic originates from a local source on the node. The issue was caused by using the wrong meta ` + "`" + `iif` + "`" + ` instead of ` + "`" + `iifname` + "`" + ` for name based matches. ([#134117](https://github.com/kubernetes/kubernetes/pull/134117), [@jack4it](https://github.com/jack4it)) [SIG Network]
+- Fixed a startup probe race condition that caused main containers to remain stuck in "Initializing" state when sidecar containers with startup probes failed initially but succeeded on restart in pods with restartPolicy=Never. ([#134801](https://github.com/kubernetes/kubernetes/pull/134801), [@yuanwang04](https://github.com/yuanwang04)) [SIG Node and Testing]
+- Fixed race-condition in service allocation logic which leads to spurious IPAddressWrongReference warnings impacting performance ([#133954](https://github.com/kubernetes/kubernetes/pull/133954), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
+- Fixes spammy incorrect "Ignoring same-zone topology hints for service since no hints were provided for zone" messages in the kube-proxy logs. ([#133527](https://github.com/kubernetes/kubernetes/pull/133527), [@danwinship](https://github.com/danwinship)) [SIG Network]
+- Kube-controller-manager: Fixes a 1.33 regression in daemonset handling of orphaned pods ([#134652](https://github.com/kubernetes/kubernetes/pull/134652), [@liggitt](https://github.com/liggitt)) [SIG Apps]
+- Kube-controller-manager: Resolves potential issues handling pods with incorrect uids in their ownerReference ([#134662](https://github.com/kubernetes/kubernetes/pull/134662), [@liggitt](https://github.com/liggitt)) [SIG Apps]
+- Kube-proxy in nftables mode now allows pods on nodes without local service endpoints to access LoadBalancer Service ExternalIPs (with ` + "`" + `externalTrafficPolicy: Local` + "`" + `). Previously, such traffic was dropped. This change brings nftables mode in line with iptables and IPVS modes, allowing traffic to be forwarded to available endpoints elsewhere in the cluster. ([#133969](https://github.com/kubernetes/kubernetes/pull/133969), [@aroradaman](https://github.com/aroradaman)) [SIG Network]
 - Kubeadm: avoid panicing if the user has malformed the kubeconfig in the cluster-info config map to not include a valid current context. Include proper validation at the appropriate locations and throw errors instead. ([#134724](https://github.com/kubernetes/kubernetes/pull/134724), [@neolit123](https://github.com/neolit123)) [SIG Cluster Lifecycle]
 - Kubeadm: ensured waiting for apiserver uses a local client that doesn't reach to the control plane endpoint and instead reaches directly to the local API server endpoint. ([#134269](https://github.com/kubernetes/kubernetes/pull/134269), [@neolit123](https://github.com/neolit123)) [SIG Cluster Lifecycle]
 - Kubeadm: fixed a bug where the node registration information for a given node was not fetched correctly during "kubeadm upgrade node" and the node name can end up being incorrect in cases where the node name is not the same as the host name. ([#134363](https://github.com/kubernetes/kubernetes/pull/134363), [@neolit123](https://github.com/neolit123)) [SIG Cluster Lifecycle]
@@ -434,5 +496,6 @@ name | architectures
 
 ### Other (Cleanup or Flake)
 
-- Masked off access to Linux thermal interrupt info in /proc and /sys. ([#132985](https://github.com/kubernetes/kubernetes/pull/132985), [@saschagrunert](https://github.com/saschagrunert)) [SIG Node]
+- Masked off access to Linux thermal interrupt info in ` + "`" + `/proc` + "`" + ` and ` + "`" + `/sys` + "`" + `. ([#132985](https://github.com/kubernetes/kubernetes/pull/132985), [@saschagrunert](https://github.com/saschagrunert)) [SIG Node]
+
 `

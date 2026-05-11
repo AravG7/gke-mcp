@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"text/template"
 	"time"
@@ -25,7 +26,6 @@ import (
 	logging "cloud.google.com/go/logging/apiv2"
 	"cloud.google.com/go/logging/apiv2/loggingpb"
 	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/validation"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -77,8 +77,8 @@ func newQueryLogsTool(conf *config.Config) *queryLogsTool {
 }
 
 func (t *queryLogsTool) queryLogs(ctx context.Context, _ *mcp.CallToolRequest, req *LogQueryRequest) (*mcp.CallToolResult, any, error) {
-	t.setDefaults(req)
-	if err := t.validate(req); err != nil {
+	req.setDefaults()
+	if err := req.validate(); err != nil {
 		return nil, nil, err
 	}
 	result, err := t.queryGCPLogs(ctx, req)
@@ -93,21 +93,15 @@ func (t *queryLogsTool) queryLogs(ctx context.Context, _ *mcp.CallToolRequest, r
 	}, nil, nil
 }
 
-func (t *queryLogsTool) setDefaults(r *LogQueryRequest) {
-	if r.ProjectID == "" {
-		r.ProjectID = t.conf.DefaultProjectID()
-	}
+func (r *LogQueryRequest) setDefaults() {
 	if r.Limit == 0 {
 		r.Limit = defaultLimit
 	}
 }
 
-func (t *queryLogsTool) validate(r *LogQueryRequest) error {
+func (r *LogQueryRequest) validate() error {
 	if r.ProjectID == "" {
 		return fmt.Errorf("project_id parameter is required")
-	}
-	if err := validation.ValidateProjectID(r.ProjectID); err != nil {
-		return err
 	}
 	if r.Limit > maxLimit {
 		return fmt.Errorf("limit parameter cannot be greater than %d", maxLimit)
@@ -137,7 +131,7 @@ func (t *queryLogsTool) queryGCPLogs(ctx context.Context, req *LogQueryRequest) 
 	}
 	defer func() {
 		if err := client.Close(); err != nil {
-			t.conf.Logger().Error("Failed to close logging client", "error", err)
+			log.Printf("Failed to close logging client: %v\n", err)
 		}
 	}()
 

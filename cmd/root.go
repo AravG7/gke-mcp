@@ -16,14 +16,32 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"runtime/debug"
+	"strings"
+	"time"
 
+	container "cloud.google.com/go/container/apiv1"
+	"cloud.google.com/go/container/apiv1/containerpb"
+	"github.com/GoogleCloudPlatform/gke-mcp/pkg/apps"
+	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
 	"github.com/GoogleCloudPlatform/gke-mcp/pkg/install"
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/server"
+	"github.com/GoogleCloudPlatform/gke-mcp/pkg/prompts"
+	"github.com/GoogleCloudPlatform/gke-mcp/pkg/tools"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rs/cors"
 	"github.com/spf13/cobra"
+	"google.golang.org/api/option"
+)
+
+const (
+	geminiInstructionsURI = "mcp://gke/pkg/install/GEMINI.md"
+	mcpAppsExtensionID    = "io.modelcontextprotocol/ui"
 )
 
 var (
@@ -85,11 +103,10 @@ func Execute() {
 }
 
 func init() {
-	// Only attempt to read build info if version hasn't been set via ldflags
-	if version == "(unknown)" || version == "dev" || version == "(devel)" {
-		if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
-			version = bi.Main.Version
-		}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		version = bi.Main.Version
+	} else {
+		log.Printf("Failed to read build info to get version.")
 	}
 
 	rootCmd.Flags().StringVar(&serverMode, "server-mode", "stdio", "transport to use for the server: stdio (default) or http")
@@ -110,16 +127,167 @@ func init() {
 	installClaudeCodeCmd.Flags().BoolVarP(&installProjectOnly, "project-only", "p", false, "Install the MCP Server only for the current project. Please run this in the root directory of your project")
 }
 
+type startOptions struct {
+	serverMode     string
+	serverHost     string
+	serverPort     int
+	allowedOrigins []string
+}
+
 func runRootCmd(cmd *cobra.Command, _ []string) {
-	opts := server.Options{
-		ServerMode:     serverMode,
-		ServerHost:     serverHost,
-		ServerPort:     serverPort,
-		AllowedOrigins: allowedOrigins,
+	opts := startOptions{
+		serverMode:     serverMode,
+		serverHost:     serverHost,
+		serverPort:     serverPort,
+		allowedOrigins: allowedOrigins,
 	}
-	if err := server.StartMCPServer(cmd.Context(), opts, version); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	startMCPServer(cmd.Context(), opts)
+}
+
+func startMCPServer(ctx context.Context, opts startOptions) {
+	c := config.New(version)
+
+	instructions := ""
+	if err := adcAuthCheck(ctx, c); err != nil {
+		if strings.Contains(err.Error(), "Unauthenticated") {
+			log.Printf("GKE API calls requires Application Default Credentials (https://cloud.google.com/docs/authentication/application-default-credentials). Get credentials with `gcloud auth application-default login` before calling MCP tools.")
+			instructions += "GKE API calls requires Application Default Credentials (https://cloud.google.com/docs/authentication/application-default-credentials). Get credentials with `gcloud auth application-default login` before calling MCP tools."
+		}
 	}
+
+	var s *mcp.Server
+	s = mcp.NewServer(
+		&mcp.Implementation{
+			Name:    "GKE MCP Server",
+			Version: version,
+		},
+		&mcp.ServerOptions{
+			Instructions: instructions,
+			Capabilities: &mcp.ServerCapabilities{
+				Tools:     &mcp.ToolCapabilities{ListChanged: true},
+				Resources: &mcp.ResourceCapabilities{ListChanged: true},
+				Prompts:   &mcp.PromptCapabilities{ListChanged: true},
+			},
+			InitializedHandler: func(ctx context.Context, req *mcp.InitializedRequest) {
+				params := req.Session.InitializeParams()
+				if supportsMCPApps(params.Capabilities) {
+					log.Println("Verified: Client host supports MCP Apps. Registering apps...")
+					if err := apps.InstallApps(ctx, s, c); err != nil {
+						log.Printf("Failed to install apps: %v\n", err)
+					}
+				}
+			},
+		},
+	)
+
+	resource := &mcp.Resource{
+		URI:         geminiInstructionsURI,
+		Name:        "GEMINI.md",
+		Description: "Instructions for how to use the GKE MCP server",
+		MIMEType:    "text/markdown",
+	}
+
+	s.AddResource(resource, func(_ context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		return &mcp.ReadResourceResult{
+			Contents: []*mcp.ResourceContents{
+				{
+					URI:      geminiInstructionsURI,
+					MIMEType: "text/markdown",
+					Text:     string(install.GeminiMarkdown),
+				},
+			},
+		}, nil
+	})
+
+	if err := prompts.Install(ctx, s, c); err != nil {
+		log.Fatalf("Failed to install prompts: %v\n", err)
+	}
+
+	if err := tools.Install(ctx, s, c); err != nil {
+		log.Fatalf("Failed to install tools: %v\n", err)
+	}
+
+	// start server in the right mode
+	log.Printf("Starting GKE MCP Server (%s) in mode '%s'", version, opts.serverMode)
+	var err error
+
+	switch opts.serverMode {
+	case "stdio":
+		tr := &mcp.LoggingTransport{Transport: &mcp.StdioTransport{}, Writer: log.Writer()}
+		err = s.Run(ctx, tr)
+	case "http":
+		mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+			return s
+		}, nil)
+
+		// Create a new CORS handler
+		c := cors.New(cors.Options{
+			AllowedOrigins: allowedOrigins,
+			Debug:          true, // Enable debug logging to see what the library is doing
+		})
+		corsHandler := c.Handler(mcpHandler)
+
+		addr := fmt.Sprintf("%s:%d", opts.serverHost, opts.serverPort)
+		log.Printf("Listening for HTTP connections on port: %s", addr)
+		server := &http.Server{
+			Addr:              addr,
+			Handler:           corsHandler,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       5 * time.Second,
+			WriteTimeout:      10 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		err = server.ListenAndServe()
+	default:
+		log.Printf("Unknown mode '%s', defaulting to 'stdio'", opts.serverMode)
+		tr := &mcp.LoggingTransport{Transport: &mcp.StdioTransport{}, Writer: log.Writer()}
+		err = s.Run(ctx, tr)
+	}
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			log.Printf("Server shutting down.")
+		} else {
+			log.Printf("Server error: %v\n", err)
+		}
+	}
+}
+
+// supportsMCPApps checks if the client host capabilities include the MCP Apps extension.
+func supportsMCPApps(capabilities *mcp.ClientCapabilities) bool {
+	if capabilities != nil && capabilities.Extensions != nil {
+		_, ok := capabilities.Extensions[mcpAppsExtensionID]
+		return ok
+	}
+	return false
+}
+
+func adcAuthCheck(ctx context.Context, c *config.Config) error {
+	projectID := c.DefaultProjectID()
+	// Can't do a pre-flight check without a default project.
+	if projectID == "" {
+		return nil
+	}
+
+	location := c.DefaultLocation()
+	// Without a default location try checking us-central1.
+	if location == "" {
+		location = "us-central1"
+	}
+
+	cmClient, err := container.NewClusterManagerClient(ctx, option.WithUserAgent(c.UserAgent()))
+	if err != nil {
+		return fmt.Errorf("failed to create cluster manager client: %w", err)
+	}
+	defer func() {
+		if err := cmClient.Close(); err != nil {
+			log.Printf("Failed to close cluster manager client: %v\n", err)
+		}
+	}()
+
+	_, err = cmClient.GetServerConfig(ctx, &containerpb.GetServerConfigRequest{
+		Name: fmt.Sprintf("projects/%s/locations/%s", projectID, location),
+	})
+	return err
 }
 
 func installOptions() (*install.Options, error) {

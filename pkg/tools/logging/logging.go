@@ -25,7 +25,7 @@ import (
 // Install adds GCP logging related tools to an MCP server.
 func Install(_ context.Context, s *mcp.Server, c *config.Config) error {
 	installQueryLogsTool(s, c)
-	installGetLogSchemas(s, c)
+	installGetLogSchemas(s)
 
 	return nil
 }

@@ -15,7 +15,6 @@
 package config
 
 import (
-	"log/slog"
 	"testing"
 )
 
@@ -123,7 +122,7 @@ func TestGetDefaultLocationNotPanic(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	loc := getDefaultLocation(slog.Default())
+	loc := getDefaultLocation()
 	t.Logf("Default location: %s", loc)
 }
 
@@ -132,7 +131,7 @@ func TestGetDefaultProjectIDNotPanic(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	projectID := getDefaultProjectID(slog.Default())
+	projectID := getDefaultProjectID()
 	t.Logf("Default project ID: %s", projectID)
 }
 

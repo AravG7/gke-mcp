@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ type getGkeReleaseNotesArgs struct {
 }
 
 // Install registers the GKE release notes tool with the MCP server.
-func Install(_ context.Context, s *mcp.Server, c *config.Config) error {
+func Install(_ context.Context, s *mcp.Server, _ *config.Config) error {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_gke_release_notes",
 		Description: "Get GKE release notes. Prefer to use this tool if GKE release notes are needed.",
@@ -52,14 +53,12 @@ func Install(_ context.Context, s *mcp.Server, c *config.Config) error {
 			ReadOnlyHint:   true,
 			IdempotentHint: true,
 		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args *getGkeReleaseNotesArgs) (*mcp.CallToolResult, any, error) {
-		return getGkeReleaseNotes(ctx, req, args, c)
-	})
+	}, getGkeReleaseNotes)
 
 	return nil
 }
 
-func getGkeReleaseNotes(_ context.Context, _ *mcp.CallToolRequest, args *getGkeReleaseNotesArgs, c *config.Config) (*mcp.CallToolResult, any, error) {
+func getGkeReleaseNotes(_ context.Context, _ *mcp.CallToolRequest, args *getGkeReleaseNotesArgs) (*mcp.CallToolResult, any, error) {
 	releaseNotesFilePath := fmt.Sprintf("release-notes-%s.html", time.Now().Format("2006-01-02"))
 	releaseNotesFilePath = filepath.Clean(releaseNotesFilePath)
 
@@ -67,34 +66,34 @@ func getGkeReleaseNotes(_ context.Context, _ *mcp.CallToolRequest, args *getGkeR
 	var err error
 
 	if _, err = os.Stat(releaseNotesFilePath); err == nil {
-		c.Logger().Info("Reading release notes from cached file", "path", releaseNotesFilePath)
+		log.Printf("Reading release notes from cached file: %s", releaseNotesFilePath)
 		out, err = os.ReadFile(releaseNotesFilePath)
 		if err != nil {
-			c.Logger().Error("Failed to read cached release notes file", "error", err, "path", releaseNotesFilePath)
+			log.Printf("Failed to read cached release notes file: %v", err)
 			return nil, nil, err
 		}
 	} else {
-		c.Logger().Info("Fetching release notes from web")
+		log.Printf("Fetching release notes from web")
 		const releaseNotesPageURL = "https://cloud.google.com/kubernetes-engine/docs/release-notes"
 		resp, err := http.Get(releaseNotesPageURL)
 		if err != nil {
-			c.Logger().Error("Failed to get release notes", "error", err)
+			log.Printf("Failed to get release notes: %v", err)
 			return nil, nil, err
 		}
 		defer func() { _ = resp.Body.Close() }()
 		out, err = io.ReadAll(resp.Body)
 		if err != nil {
-			c.Logger().Error("Failed to read release notes response body", "error", err)
+			log.Printf("Failed to read release notes response body: %v", err)
 			return nil, nil, err
 		}
 		if err = os.WriteFile(releaseNotesFilePath, out, 0600); err != nil {
-			c.Logger().Error("Failed to write release notes to file", "error", err, "path", releaseNotesFilePath)
+			log.Printf("Failed to write release notes to file: %v", err)
 		}
 	}
 
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(out))
 	if err != nil {
-		c.Logger().Error("Failed to parse release notes html content", "error", err)
+		log.Printf("Failed to parse release notes html content: %v", err)
 
 		return nil, nil, err
 	}
@@ -107,7 +106,7 @@ func getGkeReleaseNotes(_ context.Context, _ *mcp.CallToolRequest, args *getGkeR
 	})
 	fullReleaseNotesContentText := fullReleaseNotesContent.String()
 
-	reducedReleaseNotes, err := extractReleaseNotesRelevantForUpgrade(fullReleaseNotesContentText, args.SourceVersion, args.TargetVersion, c)
+	reducedReleaseNotes, err := extractReleaseNotesRelevantForUpgrade(fullReleaseNotesContentText, args.SourceVersion, args.TargetVersion)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -119,7 +118,7 @@ func getGkeReleaseNotes(_ context.Context, _ *mcp.CallToolRequest, args *getGkeR
 	}, nil, nil
 }
 
-func extractReleaseNotesRelevantForUpgrade(fullReleaseNotes string, sourceVersion string, targetVersion string, c *config.Config) (string, error) {
+func extractReleaseNotesRelevantForUpgrade(fullReleaseNotes string, sourceVersion string, targetVersion string) (string, error) {
 	versionLocations := gkeVersionRegexp.FindAllStringIndex(fullReleaseNotes, -1)
 
 	var leftBorderVersionLocation []int
@@ -129,10 +128,11 @@ func extractReleaseNotesRelevantForUpgrade(fullReleaseNotes string, sourceVersio
 		// Find the first version that is <= targetVersion. One version to the left (if not first) is our left border.
 		for locIndex, loc := range versionLocations {
 			version := fullReleaseNotes[loc[0]:loc[1]]
-			cmp, err := compareVersions(version, targetVersion, c)
+			cmp, err := compareVersions(version, targetVersion)
 			if err != nil {
 				continue // Skip invalid versions
 			}
+			fmt.Printf("cmp%d + %v vs %v\n", cmp, version, targetVersion)
 			// cmp >= 0 means targetVersion >= version
 			if cmp == 0 {
 				leftBorderVersionLocation = loc
@@ -152,7 +152,7 @@ func extractReleaseNotesRelevantForUpgrade(fullReleaseNotes string, sourceVersio
 			iFromEnd := len(versionLocations) - i - 1
 			loc := versionLocations[iFromEnd]
 			version := fullReleaseNotes[loc[0]:loc[1]]
-			cmp, err := compareVersions(version, sourceVersion, c)
+			cmp, err := compareVersions(version, sourceVersion)
 			if err != nil {
 				continue // Skip invalid versions
 			}
@@ -218,15 +218,15 @@ func extractReleaseNotesRelevantForUpgrade(fullReleaseNotes string, sourceVersio
 // - 1 if b > a
 // - 0 if b == a
 // - -1 if b < a
-func compareVersions(a, b string, c *config.Config) (int, error) {
+func compareVersions(a, b string) (int, error) {
 	aMajor, aMinor, aPatch, aGKE, err := parseGkeVersion(a)
 	if err != nil {
-		c.Logger().Error("Failed to parse version A", "version", a, "error", err)
+		log.Printf("Failed to parse version A '%s': %v", a, err)
 		return 0, err
 	}
 	bMajor, bMinor, bPatch, bGKE, err := parseGkeVersion(b)
 	if err != nil {
-		c.Logger().Error("Failed to parse version B", "version", b, "error", err)
+		log.Printf("Failed to parse version B '%s': %v", b, err)
 		return 0, err
 	}
 

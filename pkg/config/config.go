@@ -16,8 +16,7 @@
 package config
 
 import (
-	"log/slog"
-	"os"
+	"log"
 	"os/exec"
 	"strings"
 )
@@ -27,12 +26,6 @@ type Config struct {
 	userAgent        string
 	defaultProjectID string
 	defaultLocation  string
-	logger           *slog.Logger
-}
-
-// Logger returns the logger instance.
-func (c *Config) Logger() *slog.Logger {
-	return c.logger
 }
 
 // UserAgent returns the user agent string for outbound API calls.
@@ -52,29 +45,23 @@ func (c *Config) DefaultLocation() string {
 
 // New constructs a Config populated from gcloud and build version.
 func New(version string) *Config {
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})
-	logger := slog.New(handler)
-
 	return &Config{
 		userAgent:        "gke-mcp/" + version,
-		defaultProjectID: getDefaultProjectID(logger),
-		defaultLocation:  getDefaultLocation(logger),
-		logger:           logger,
+		defaultProjectID: getDefaultProjectID(),
+		defaultLocation:  getDefaultLocation(),
 	}
 }
 
-func getDefaultProjectID(logger *slog.Logger) string {
+func getDefaultProjectID() string {
 	projectID, err := getGcloudConfig("core/project")
 	if err != nil {
-		logger.Error("Failed to get default project", "error", err)
+		log.Printf("Failed to get default project: %v", err)
 		return ""
 	}
 	return projectID
 }
 
-func getDefaultLocation(logger *slog.Logger) string {
+func getDefaultLocation() string {
 	region, err := getGcloudConfig("compute/region")
 	if err == nil {
 		return region

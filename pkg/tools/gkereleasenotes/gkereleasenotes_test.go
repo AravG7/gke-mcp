@@ -17,8 +17,6 @@ package gkereleasenotes
 import (
 	"strings"
 	"testing"
-
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
 )
 
 func Test_extractReleaseNotesRelevantForUpgrade(t *testing.T) {
@@ -194,10 +192,9 @@ August 28, 2025
 		},
 	}
 
-	cfg := config.New("test")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := extractReleaseNotesRelevantForUpgrade(tt.args.fullReleaseNotes, tt.args.sourceVersion, tt.args.targetVersion, cfg)
+			got, err := extractReleaseNotesRelevantForUpgrade(tt.args.fullReleaseNotes, tt.args.sourceVersion, tt.args.targetVersion)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("extractReleaseNotesRelevantForUpgrade() error = %v, wantErr %v", err, tt.wantErr)
 				return

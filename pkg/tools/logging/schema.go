@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"path"
 
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -38,22 +37,17 @@ var supportedLogTypes = map[string]bool{
 	"k8s_event_logs":       true,
 }
 
-type schemaHandlers struct {
-	c *config.Config
-}
-
-func installGetLogSchemas(s *mcp.Server, c *config.Config) {
-	h := &schemaHandlers{c: c}
+func installGetLogSchemas(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_log_schema",
 		Description: "Get the schema for a specific log type.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-	}, h.getLogSchema)
+	}, getLogSchema)
 }
 
-func (h *schemaHandlers) getLogSchema(_ context.Context, _ *mcp.CallToolRequest, req *GetLogSchemaRequest) (*mcp.CallToolResult, any, error) {
+func getLogSchema(_ context.Context, _ *mcp.CallToolRequest, req *GetLogSchemaRequest) (*mcp.CallToolResult, any, error) {
 	if supportedLogTypes[req.LogType] {
 		fileName := fmt.Sprintf("%s.md", req.LogType)
 		filePath := path.Join("schemas", fileName)

@@ -79,13 +79,9 @@ export function transformApiData(apiResponse: AppTimeSeries[], originalQuery: st
  * @returns Localized date-time string.
  */
 export function formatDate(value: Date) {
-  return value.toLocaleString('en-US', {
+  const dateStr = value.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
-    timeZone: 'UTC',
   });
+  return `${dateStr} ${value.toLocaleTimeString()}`;
 }

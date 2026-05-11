@@ -18,12 +18,12 @@ package clustertoolkit
 import (
 	"context"
 	"fmt"
+	"log"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/validation"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -32,23 +32,18 @@ type clusterToolkitDownloadArgs struct {
 }
 
 // Install registers Cluster Toolkit tools with the MCP server.
-func Install(_ context.Context, s *mcp.Server, c *config.Config) error {
+func Install(_ context.Context, s *mcp.Server, _ *config.Config) error {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "cluster_toolkit_download",
 		Description: "Cluster Toolkit, is open-source software offered by Google Cloud which simplifies the process for you to create Google Kubernetes Engine clusters and deploy high performance computing (HPC), artificial intelligence (AI), and machine learning (ML). It is designed to be highly customizable and extensible, and intends to address the deployment needs of a broad range of use cases. This tool will download the public git repository so that Cluster Toolkit can be used.",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args *clusterToolkitDownloadArgs) (*mcp.CallToolResult, any, error) {
-		return clusterToolkitDownload(ctx, req, args, c)
-	})
+	}, clusterToolkitDownload)
 
 	return nil
 }
 
-func clusterToolkitDownload(_ context.Context, _ *mcp.CallToolRequest, args *clusterToolkitDownloadArgs, c *config.Config) (*mcp.CallToolResult, any, error) {
+func clusterToolkitDownload(_ context.Context, _ *mcp.CallToolRequest, args *clusterToolkitDownloadArgs) (*mcp.CallToolResult, any, error) {
 	if args.DownloadDirectory == "" {
 		return nil, nil, fmt.Errorf("download_directory argument cannot be empty")
-	}
-	if err := validation.ValidatePath(args.DownloadDirectory); err != nil {
-		return nil, nil, err
 	}
 	downloadDir := args.DownloadDirectory
 	// Make sure we download into a sub-directory
@@ -56,9 +51,9 @@ func clusterToolkitDownload(_ context.Context, _ *mcp.CallToolRequest, args *clu
 		downloadDir = filepath.Join(downloadDir, "cluster-toolkit")
 	}
 	// #nosec G204
-	out, err := exec.Command("git", "clone", "https://github.com/GoogleCloudPlatform/cluster-toolkit.git", downloadDir).CombinedOutput()
+	out, err := exec.Command("git", "clone", "https://github.com/GoogleCloudPlatform/cluster-toolkit.git", downloadDir).Output()
 	if err != nil {
-		c.Logger().Error("Failed to download Cluster Toolkit", "error", err, "output", string(out))
+		log.Printf("Failed to download Cluster Toolkit: %v %s", err, out)
 		return nil, nil, err
 	}
 

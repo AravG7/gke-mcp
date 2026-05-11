@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/logging/apiv2/loggingpb"
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
 	"github.com/google/go-cmp/cmp"
 	ltype "google.golang.org/genproto/googleapis/logging/type"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -29,9 +28,6 @@ import (
 )
 
 func TestLogQueryRequest_Validate(t *testing.T) {
-	conf := config.New("test")
-	tool := newQueryLogsTool(conf)
-
 	tests := []struct {
 		name    string
 		req     LogQueryRequest
@@ -89,8 +85,8 @@ func TestLogQueryRequest_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tool.validate(&tt.req); (err != nil) != tt.wantErr {
-				t.Errorf("queryLogsTool.validate() error = %v, wantErr %v", err, tt.wantErr)
+			if err := tt.req.validate(); (err != nil) != tt.wantErr {
+				t.Errorf("LogQueryRequest.validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

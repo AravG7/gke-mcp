@@ -29,14 +29,13 @@ import (
 	"time"
 
 	container "cloud.google.com/go/container/apiv1"
-	"cloud.google.com/go/container/apiv1/containerpb"
+	containerpb "cloud.google.com/go/container/apiv1/containerpb"
 	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/validation"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/api/option"
 	"google.golang.org/protobuf/encoding/protojson"
-	k8sClientApi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/tools/clientcmd"
+	k8sClientApi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 type handlers struct {
@@ -132,9 +131,6 @@ func (h *handlers) listClusters(ctx context.Context, _ *mcp.CallToolRequest, arg
 	if args.ProjectID == "" {
 		args.ProjectID = h.c.DefaultProjectID()
 	}
-	if err := validation.ValidateProjectID(args.ProjectID); err != nil {
-		return nil, nil, err
-	}
 	if args.Location == "" {
 		args.Location = "-"
 	}
@@ -160,9 +156,6 @@ func (h *handlers) listClusters(ctx context.Context, _ *mcp.CallToolRequest, arg
 func (h *handlers) getCluster(ctx context.Context, _ *mcp.CallToolRequest, args *getClustersArgs) (*mcp.CallToolResult, any, error) {
 	if args.ProjectID == "" {
 		args.ProjectID = h.c.DefaultProjectID()
-	}
-	if err := validation.ValidateProjectID(args.ProjectID); err != nil {
-		return nil, nil, err
 	}
 	if args.Location == "" {
 		args.Location = h.c.DefaultLocation()
@@ -190,9 +183,6 @@ func (h *handlers) createCluster(ctx context.Context, _ *mcp.CallToolRequest, ar
 	if args.ProjectID == "" {
 		args.ProjectID = h.c.DefaultProjectID()
 	}
-	if err := validation.ValidateProjectID(args.ProjectID); err != nil {
-		return nil, nil, err
-	}
 	if args.Location == "" {
 		args.Location = h.c.DefaultLocation()
 	}
@@ -218,9 +208,6 @@ func (h *handlers) createCluster(ctx context.Context, _ *mcp.CallToolRequest, ar
 func (h *handlers) getKubeconfig(ctx context.Context, _ *mcp.CallToolRequest, args *getKubeconfigArgs) (*mcp.CallToolResult, any, error) {
 	if args.ProjectID == "" {
 		args.ProjectID = h.c.DefaultProjectID()
-	}
-	if err := validation.ValidateProjectID(args.ProjectID); err != nil {
-		return nil, nil, err
 	}
 	if args.Location == "" {
 		args.Location = h.c.DefaultLocation()
@@ -264,7 +251,7 @@ func (h *handlers) getKubeconfig(ctx context.Context, _ *mcp.CallToolRequest, ar
 	newKubeconfig := oldKubeconfig.DeepCopy()
 
 	// Create new cluster, context, and user entries
-	clusterCaCertificateByte, err := base64.StdEncoding.DecodeString(clusterCaCertificate)
+	clusterCaCertificateByte, err := base64.RawStdEncoding.DecodeString(clusterCaCertificate)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to decode clusterCaCertificate: %w", err)
 	}
@@ -310,15 +297,13 @@ func (h *handlers) getNodeSosReport(ctx context.Context, _ *mcp.CallToolRequest,
 	if args.Node == "" {
 		return nil, nil, fmt.Errorf("node argument cannot be empty")
 	}
-	if err := validation.ValidateNodeName(args.Node); err != nil {
-		return nil, nil, err
+	// Basic validation for node name to prevent command injection
+	if match, _ := regexp.MatchString(`^[a-z0-9][a-z0-9\-\.]*[a-z0-9]$`, args.Node); !match {
+		return nil, nil, fmt.Errorf("invalid node name: %s", args.Node)
 	}
 
 	if args.Destination == "" {
 		args.Destination = "/tmp/sos-report"
-	}
-	if err := validation.ValidatePath(args.Destination); err != nil {
-		return nil, nil, err
 	}
 	if args.Method == "" {
 		args.Method = "any"

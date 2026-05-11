@@ -18,12 +18,12 @@ package monitoring
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	monitoring "cloud.google.com/go/monitoring/apiv3/v2"
 	monitoringpb "cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
 	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/validation"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -59,9 +59,6 @@ func (h *handlers) listMRDescriptor(ctx context.Context, _ *mcp.CallToolRequest,
 	if args.ProjectID == "" {
 		args.ProjectID = h.c.DefaultProjectID()
 	}
-	if err := validation.ValidateProjectID(args.ProjectID); err != nil {
-		return nil, nil, err
-	}
 	if args.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id argument cannot be empty")
 	}
@@ -71,7 +68,7 @@ func (h *handlers) listMRDescriptor(ctx context.Context, _ *mcp.CallToolRequest,
 	}
 	defer func() {
 		if err := c.Close(); err != nil {
-			h.c.Logger().Error("Failed to close monitoring client", "error", err)
+			log.Printf("Failed to close monitoring client: %v\n", err)
 		}
 	}()
 	req := &monitoringpb.ListMonitoredResourceDescriptorsRequest{

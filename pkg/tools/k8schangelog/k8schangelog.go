@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -32,20 +33,12 @@ var (
 	changelogHostURL             = "https://raw.githubusercontent.com"
 )
 
-type handlers struct {
-	c *config.Config
-}
-
 type getK8sChangelogArgs struct {
 	KubernetesMinorVersion string `json:"KubernetesMinorVersion" jsonschema:"The kubernetes minor version to get changelog for. For example, '1.33'."`
 }
 
 // Install registers Kubernetes changelog tools with the MCP server.
-func Install(_ context.Context, s *mcp.Server, c *config.Config) error {
-	h := &handlers{
-		c: c,
-	}
-
+func Install(_ context.Context, s *mcp.Server, _ *config.Config) error {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_k8s_changelog",
 		Description: "Get changelog file for a specific kubernetes minor version and keep only changes content. Prefer to use this tool if kubernetes minor version changelog is needed.",
@@ -53,12 +46,12 @@ func Install(_ context.Context, s *mcp.Server, c *config.Config) error {
 			ReadOnlyHint:   true,
 			IdempotentHint: true,
 		},
-	}, h.getK8sChangelog)
+	}, getK8sChangelog)
 
 	return nil
 }
 
-func (h *handlers) getK8sChangelog(_ context.Context, _ *mcp.CallToolRequest, args *getK8sChangelogArgs) (*mcp.CallToolResult, any, error) {
+func getK8sChangelog(_ context.Context, _ *mcp.CallToolRequest, args *getK8sChangelogArgs) (*mcp.CallToolResult, any, error) {
 	version := strings.TrimSpace(args.KubernetesMinorVersion)
 	if !kubernetesMinorVersionRegexp.MatchString(version) {
 		return nil, nil, fmt.Errorf("invalid kubernetes minor version: %s", version)
@@ -68,20 +61,20 @@ func (h *handlers) getK8sChangelog(_ context.Context, _ *mcp.CallToolRequest, ar
 	// #nosec G107
 	resp, err := http.Get(changelogURL)
 	if err != nil {
-		h.c.Logger().Error("Failed to get changelog", "error", err, "url", changelogURL)
+		log.Printf("Failed to get changelog: %v", err)
 		return nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		err := fmt.Errorf("failed to get changelog with status code: %d", resp.StatusCode)
-		h.c.Logger().Error("Failed to get changelog", "error", err, "status_code", resp.StatusCode)
+		log.Printf("Failed to get changelog: %v", err)
 		return nil, nil, err
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		h.c.Logger().Error("Failed to read changelog response body", "error", err)
+		log.Printf("Failed to read changelog response body: %v", err)
 		return nil, nil, err
 	}
 	changelogFileContent := string(body)

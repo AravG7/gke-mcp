@@ -18,14 +18,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/GoogleCloudPlatform/gke-mcp/pkg/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestGetLogSchema(t *testing.T) {
-	conf := config.New("test")
-	h := &schemaHandlers{c: conf}
-
 	tests := []struct {
 		name    string
 		req     GetLogSchemaRequest
@@ -49,7 +45,7 @@ func TestGetLogSchema(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := h.getLogSchema(context.Background(), &mcp.CallToolRequest{}, &tt.req)
+			_, _, err := getLogSchema(context.Background(), &mcp.CallToolRequest{}, &tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getLogSchema() error = %v, wantErr %v", err, tt.wantErr)
 			}
